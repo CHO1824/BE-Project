@@ -1,0 +1,141 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE mapper PUBLIC "-//mybatis.org//DTD Mapper 3.0//EN" "http://mybatis.org/dtd/mybatis-3-mapper.dtd">
+
+<mapper namespace="wayble.ade.common.repository.ExhstQuoteRepository">
+
+	<!-- 배출자 견적 요청 목록 조회 -->
+	<select id="getExhstQuoteList" parameterType="map" resultType="wayble.ade.common.util.CamelCaseMap">
+		SELECT
+			MQ.QUOTE_ID AS quoteId,
+			MQ.QUOTE_STTS_CD AS quoteSttsCd,
+			CC.CODE_NM AS codeNm,
+			DATE_FORMAT(MQ.QUOTE_RQST_DT, '%Y-%m-%d') AS quoteRqstDt,
+			DATE_FORMAT(MQ.ESTMT_SEND_DT, '%Y-%m-%d') AS estimateSendDt,
+			FIRST_VALUE(MQW.WSTE_NM) OVER(ORDER BY MQW.WSTE_SN) AS wasteNm,
+			COUNT(MQW.WSTE_SN) AS wasteCnt,
+			SUM(COALESCE(MQW.EXPCT_EXHST_AMT, 0)) AS expctExhstAmt,
+			MQ.ROAD_ADDR AS address
+		FROM MTCH_QUOTE MQ
+		LEFT OUTER JOIN MTCH_QUOTE_WASTE MQW
+		ON MQW.QUOTE_ID = MQ.QUOTE_ID
+		LEFT OUTER JOIN CMMN_CODE CC
+		ON CC.CODE_TYPE = 'QUOTE_STTS_CD'
+		AND CC.CODE_VAL = MQ.QUOTE_STTS_CD
+		AND CC.USE_YN = 1
+		WHERE MQ.RQST_EMAIL = #{email}
+		AND	MQ.RQST_PHONE_NO LIKE CONCAT('%', #{phoneNumber})
+		ORDER BY MQ.QUOTE_RQST_DT DESC, MQ.QUOTE_ID DESC
+	</select>
+
+	<!--배출자 견적 요청 내역 상세 조회-->
+	<!-- 견적 기본 정보 -->
+	<select id="getExhstQuoteBase" parameterType="map" resultType="wayble.ade.common.util.CamelCaseMap">
+		SELECT
+			MQ.QUOTE_ID,
+			MQ.QUOTE_STTS_CD,
+			CC.CODE_NM,
+			DATE_FORMAT(MQ.QUOTE_RQST_DT, '%Y-%m-%d') AS QUOTE_RQST_DT,
+			DATE_FORMAT(MQ.ESTMT_SEND_DT, '%Y-%m-%d') AS ESTIMATE_SEND_DT,
+			MQ.RQST_EMAIL,
+			MQ.RQST_PHONE_NO,
+			MQ.POST_NO,
+			MQ.ROAD_ADDR,
+			MQ.EXTRA_CMNT
+		FROM MTCH_QUOTE MQ
+		LEFT OUTER JOIN CMMN_CODE CC
+		ON CC.CODE_VAL = MQ.QUOTE_STTS_CD
+		AND CC.CODE_TYPE = 'QUOTE_STTS_CD'
+		AND CC.USE_YN = 'Y'
+		WHERE MQ.QUOTE_ID = #{quoteId}
+	</select>
+
+	<!-- 폐기물 리스트 -->
+	<select id="getExhstQuoteWasteList" parameterType="map" resultType="wayble.ade.common.util.CamelCaseMap">
+		SELECT
+			MQW.WSTE_SN AS NO,
+			MQW.WSTE_NM,
+			MQW.EXPCT_EXHST_AMT
+		FROM MTCH_QUOTE_WASTE MQW
+		WHERE MQW.QUOTE_ID = #{quoteId}
+		ORDER BY MQW.WSTE_SN
+	</select>
+
+	<!-- 사진 파일 리스트 -->
+	<select id="getExhstQuotePhotoList" parameterType="map" resultType="wayble.ade.common.util.CamelCaseMap">
+		SELECT
+			CAF.FILE_SN,
+			CAF.FILE_GRP_ID,
+			CAF.FILE_ORIGN_NM,
+			CAF.FILE_PATH,
+			CAF.FILE_SAVE_NM
+		FROM CMMN_ATTACH_FILE CAF
+		WHERE CAF.FILE_GRP_ID = (SELECT ATTACH_FILE
+		                         FROM MTCH_QUOTE
+		                         WHERE QUOTE_ID = #{quoteId})
+		AND CAF.DEL_YN = 'N'
+		ORDER BY CAF.FILE_UPL_NO, CAF.FILE_SN
+	</select>
+
+    <!-- 견적 요청 기본 정보 저장 -->
+    <insert id="createQuote" parameterType="map">
+        INSERT INTO MTCH_QUOTE
+        (
+            QUOTE_ID,
+            POST_NO,
+            LOT_ADDR,
+            ROAD_ADDR,
+            SMPL_ADDR,
+            RQST_EMAIL,
+            RQST_PHONE_NO,
+            EXTRA_CMNT,
+            ATTACH_FILE,
+            QUOTE_STTS_CD,
+            ESTMT_STTS_CD,
+            CRT_USR_AGNT,
+            CRT_USR_SN,
+            CRT_DT
+        )
+        VALUES
+        (
+            #{quoteId},
+            #{postNo},
+            #{lotAddr},
+            #{roadAddr},
+            #{simpleAddr},
+            #{rqstEmail},
+            #{phoneNo},
+            #{extraCmnt},
+            #{fileGrpId},
+            #{quoteSttsCd},
+            #{estmtSttsCd},
+            #{userAgnt},
+            #{userSn, jdbcType=BIGINT},
+            NOW()
+        )
+    </insert>
+
+    <!-- 견적 요청 폐기물 정보 저장 (Bulk Insert) -->
+    <insert id="createQuoteWaste" parameterType="map">
+        INSERT INTO MTCH_QUOTE_WASTE
+        (
+            QUOTE_ID,
+            WSTE_NM,
+            WSTE_CD,
+            EXPCT_EXHST_AMT,
+            CRT_USR_SN,
+            CRT_DT
+        )
+        VALUES
+        <foreach collection="wasteList" item="waste" separator=",">
+        (
+            #{quoteId},
+            #{waste.wsteNm},
+            #{waste.wsteCd},
+            #{waste.expctExhstAmt, jdbcType=DECIMAL},
+            #{userSn, jdbcType=BIGINT},
+            NOW()
+        )
+        </foreach>
+    </insert>
+
+</mapper>
